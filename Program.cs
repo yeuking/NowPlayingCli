@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -25,30 +25,110 @@ namespace NowPlayingCli
                 switch (props.PlaybackType.Value)
                 {
                     case MediaPlaybackType.Music:
-                        return $"{musicSymbol} {props.Title} by {props.Artist}";
+                    case MediaPlaybackType.Unknown:
+                        return FormatMusicLine(props, musicSymbol);
                     case MediaPlaybackType.Video:
                         return $"{videoSymbol} {props.Title}";
-
                 }
             }
+
+            // Some SMTC sources (e.g. certain AIMP integrations) omit PlaybackType but still send title/artist.
+            if (!string.IsNullOrWhiteSpace(props.Title) || !string.IsNullOrWhiteSpace(props.Artist))
+                return FormatMusicLine(props, musicSymbol);
             return "";
         }
 
+        static string FormatMusicLine(GlobalSystemMediaTransportControlsSessionMediaProperties props, string musicSymbol)
+        {
+            var title = props.Title ?? "";
+            var artist = props.Artist ?? "";
+            if (string.IsNullOrWhiteSpace(artist))
+                return $"{musicSymbol} {title}".TrimEnd();
+            if (string.IsNullOrWhiteSpace(title))
+                return $"{musicSymbol} {artist}";
+            return $"{musicSymbol} {title} by {artist}";
+        }
+
         static readonly string[] defaultPrograms = { "spotify.exe" };
-        static readonly MediaPlaybackType[] defaultPlaybackTypes = { MediaPlaybackType.Music, MediaPlaybackType.Video };
+        static readonly MediaPlaybackType[] defaultPlaybackTypes =
+        {
+            MediaPlaybackType.Music,
+            MediaPlaybackType.Video,
+            MediaPlaybackType.Unknown
+        };
 
         static void PrintUsage(string program, TextWriter writer)
         {
             writer.WriteLine($"{program} [OPTIONS] [PROGRAMS...]");
             writer.WriteLine($"  Where OPTIONS may be any of the following");
             writer.WriteLine($"    -h,--help                 This text");
-            writer.WriteLine($"    -t,--type <video|music>   Add playback type to list of types that is desired");
+            writer.WriteLine($"    -t,--type <video|music|unknown>  Add playback type (repeatable). unknown helps some players (e.g. AIMP) that omit type.");
             writer.WriteLine($"    -m,--icon-music <ICON>    Use ICON as the icon for music playback");
             writer.WriteLine($"    -v,--icon-video <ICON>    Use ICON as the icon for video playback");
             writer.WriteLine($"    -d,--listen     <PORT>    Instead of printing to the console, listen \n" +
                              $"                              for TCP connections on <PORT>, printing media\n" +
                              $"                              information, then closing the connection\n");
-            writer.WriteLine($"  And PROGRAMS is a list of executables to listen to media events from (defaults to spotify.exe)");
+            writer.WriteLine($"    -L,--list-sessions        Print all media session app ids, then exit (for debugging filters)\n");
+            writer.WriteLine($"  And PROGRAMS is a list of substrings matched against each session's app id (case-insensitive).");
+            writer.WriteLine($"  Examples: spotify.exe  aimp  (defaults to spotify.exe if none given)");
+        }
+
+        static bool PlaybackAllowed(GlobalSystemMediaTransportControlsSessionMediaProperties props, IEnumerable<MediaPlaybackType> playbackTypes)
+        {
+            if (props == null) return false;
+            if (props.PlaybackType.HasValue)
+                return playbackTypes.Contains(props.PlaybackType.Value);
+
+            // Type not set — show if music-style metadata exists and music (or unknown) is accepted.
+            var allowUntyped = playbackTypes.Contains(MediaPlaybackType.Music) || playbackTypes.Contains(MediaPlaybackType.Unknown);
+            return allowUntyped
+                && (!string.IsNullOrWhiteSpace(props.Title) || !string.IsNullOrWhiteSpace(props.Artist));
+        }
+
+        static bool SessionMatchesPrograms(GlobalSystemMediaTransportControlsSession session, IEnumerable<string> programs)
+        {
+            var id = session?.SourceAppUserModelId;
+            if (string.IsNullOrEmpty(id)) return false;
+            var lower = id.ToLowerInvariant();
+            foreach (var p in programs)
+            {
+                if (string.IsNullOrEmpty(p)) continue;
+                if (lower.Contains(p.ToLowerInvariant())) return true;
+            }
+            return false;
+        }
+
+        static int ListSessions(GlobalSystemMediaTransportControlsSessionManager sessionManager)
+        {
+            var sessions = sessionManager.GetSessions();
+            if (sessions.Count == 0)
+            {
+                Console.Error.WriteLine("No media sessions — nothing is registered with Windows global media controls.");
+                Console.Error.WriteLine("AIMP: install the add-on \"Windows 10 Media Control\" from the AIMP catalog, restart AIMP, then play a track.");
+                return 0;
+            }
+
+            foreach (var session in sessions)
+            {
+                var id = session.SourceAppUserModelId ?? "";
+                string extra = "";
+                try
+                {
+                    var props = session.TryGetMediaPropertiesAsync().GetAwaiter().GetResult();
+                    if (props?.PlaybackType != null && props.PlaybackType.HasValue)
+                        extra = $" playbackType={props.PlaybackType.Value}";
+                    else if (props != null)
+                        extra = " playbackType=(unset)";
+                    if (!string.IsNullOrEmpty(props?.Title))
+                        extra += $" title=\"{props.Title}\"";
+                }
+                catch
+                {
+                    // ignore — session may not expose properties
+                }
+                Console.WriteLine($"{id}{extra}");
+            }
+            return 0;
         }
 
         static int Listen(int port, Func<string> callback)
@@ -92,6 +172,7 @@ namespace NowPlayingCli
 
             var userPrograms = new List<string>();
             var userPlaybackTypes = new List<MediaPlaybackType>();
+            var listSessionsOnly = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -101,6 +182,11 @@ namespace NowPlayingCli
                     {
                         PrintUsage(programName, Console.Out);
                         return 0;
+                    }
+                    if (args[i] == "-L" || args[i] == "--list-sessions")
+                    {
+                        listSessionsOnly = true;
+                        continue;
                     }
                     else if (args[i] == "-d" || args[i] == "--listen")
                     {
@@ -197,16 +283,18 @@ namespace NowPlayingCli
             IEnumerable<MediaPlaybackType> playbackTypes = userPlaybackTypes.Count > 0 ? (IEnumerable<MediaPlaybackType>)userPlaybackTypes : defaultPlaybackTypes;
 
             var sessionManager = GlobalSystemMediaTransportControlsSessionManager.RequestAsync().GetAwaiter().GetResult();
+            if (listSessionsOnly)
+                return ListSessions(sessionManager);
+
             Func<string> printer = () =>
             {
-                var currentSession = sessionManager.GetCurrentSession();
-                if (programs.Contains(currentSession?.SourceAppUserModelId.ToLower()))
+                foreach (var session in sessionManager.GetSessions())
                 {
-                    var mediaProperties = currentSession.TryGetMediaPropertiesAsync().GetAwaiter().GetResult();
-                    if (mediaProperties?.PlaybackType.HasValue == true && playbackTypes.Contains(mediaProperties.PlaybackType.Value))
-                    {
-                        return PrintMediaProperties(mediaProperties, videoSymbol, musicSymbol);
-                    }
+                    if (!SessionMatchesPrograms(session, programs)) continue;
+                    var mediaProperties = session.TryGetMediaPropertiesAsync().GetAwaiter().GetResult();
+                    if (!PlaybackAllowed(mediaProperties, playbackTypes)) continue;
+                    var line = PrintMediaProperties(mediaProperties, videoSymbol, musicSymbol);
+                    if (!string.IsNullOrEmpty(line)) return line;
                 }
                 return "";
             };
