@@ -1,0 +1,15 @@
+D:\Apps\NowPlayingCli\bin\Release\netcoreapp3.1\NowPlayingCli.exe
+D:\Apps\NowPlayingCli\bin\Release\netcoreapp3.1\NowPlayingCli.deps.json
+D:\Apps\NowPlayingCli\bin\Release\netcoreapp3.1\NowPlayingCli.runtimeconfig.json
+D:\Apps\NowPlayingCli\bin\Release\netcoreapp3.1\NowPlayingCli.runtimeconfig.dev.json
+D:\Apps\NowPlayingCli\bin\Release\netcoreapp3.1\NowPlayingCli.dll
+D:\Apps\NowPlayingCli\bin\Release\netcoreapp3.1\NowPlayingCli.pdb
+D:\Apps\NowPlayingCli\obj\Release\netcoreapp3.1\NowPlayingCli.csproj.AssemblyReference.cache
+D:\Apps\NowPlayingCli\obj\Release\netcoreapp3.1\NowPlayingCli.GeneratedMSBuildEditorConfig.editorconfig
+D:\Apps\NowPlayingCli\obj\Release\netcoreapp3.1\NowPlayingCli.AssemblyInfoInputs.cache
+D:\Apps\NowPlayingCli\obj\Release\netcoreapp3.1\NowPlayingCli.AssemblyInfo.cs
+D:\Apps\NowPlayingCli\obj\Release\netcoreapp3.1\NowPlayingCli.csproj.CoreCompileInputs.cache
+D:\Apps\NowPlayingCli\obj\Release\netcoreapp3.1\NowPlayingCli.sourcelink.json
+D:\Apps\NowPlayingCli\obj\Release\netcoreapp3.1\NowPlayingCli.dll
+D:\Apps\NowPlayingCli\obj\Release\netcoreapp3.1\NowPlayingCli.pdb
+D:\Apps\NowPlayingCli\obj\Release\netcoreapp3.1\NowPlayingCli.genruntimeconfig.cache
